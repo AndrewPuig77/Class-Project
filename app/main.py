@@ -50,9 +50,12 @@ print(f"Rows remaining after cleaning:  {remaining_rows}")
 df_clean = df.loc[~is_outlier].copy()
 df_clean = df_clean.dropna(subset=NUMERIC_COLS)
 
-df_clean.to_csv("cleaned.csv", index=False)
-print("Cleaned data saved to cleaned.csv")
+output_dir = "output_data"
+os.makedirs(output_dir, exist_ok=True)  # create folder if it doesn't exist
 
+output_path = os.path.join(output_dir, "cleaned.csv")
+df_clean.to_csv(output_path, index=False)
+print(f"Cleaned data saved to {output_path}")
 
 
 # -------- Save to MongoDB --------
