@@ -61,7 +61,16 @@ db = client["water_quality_data"]
 collection = db["asv_1"]
 
 collection.delete_many({})
-    
+
+df_clean = df_clean.rename(columns={
+    "Temperature (c)": "temperature",
+    "Salinity (ppt)": "salinity",
+    "ODO mg/L": "odo",
+    "Date m/d/y": "date",
+    "Latitude": "latitude",
+    "Longitude": "longitude"
+})
+
 records = df_clean.to_dict("records")
 if records:  
     collection.insert_many(records)
