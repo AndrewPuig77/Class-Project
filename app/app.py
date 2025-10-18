@@ -1,11 +1,32 @@
 from flask import Flask, jsonify, request
 from pymongo import MongoClient
 from datetime import datetime
-
+import os
+from dotenv import load_dotenv
 app = Flask(__name__)
 
 # Connect to Mongo
-client = MongoClient("mongodb://localhost:27017/")
+load_dotenv()
+
+MONGO_URI = os.getenv("MONGODB_URI")
+MONGO_PASS = os.getenv("MONGO_PASS")
+MONGO_USER = os.getenv("MONGO_USER")
+
+if not all([MONGO_URI, MONGO_USER, MONGO_PASS]):
+    print("ERROR: Missing MongoDB credentials!")
+    exit(1)
+
+url= f"mongodb+srv://{MONGO_USER}:{MONGO_PASS}@{MONGO_URI}/?retryWrites=true&w=majority"
+
+client = MongoClient(url)
+try:
+    # The ismaster command is cheap and does not require auth
+    client.admin.command('ping')
+    print("MongoDB connection successful!")
+except Exception as e:
+    print("MongoDB connection failed:", e)
+    
+
 db = client["water_quality_data"]
 collection = db["asv_1"]
 
@@ -26,33 +47,50 @@ def _parse_iso_timestamp(ts_str):
     parsed = datetime.fromisoformat(s)
     return ts_str, parsed
 
+# In Flask app.py
+def clean_nan(obj):
+    """Replace NaN with None for JSON serialization"""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+    if isinstance(obj, dict):
+        return {k: clean_nan(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan(item) for item in obj]
+    return obj
+
+# Use it before returning
+# items = clean_nan(items)
+# return jsonify({"count": total, "items": items})
+
 #----- Health Check -----
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
 
 
+#----- Get Available Dates -----
+@app.route("/api/dates", methods=["GET"])
+def get_dates():
+    try:
+        dates = collection.distinct("Date")
+        dates = sorted([d for d in dates if d])
+        return jsonify({"dates": dates})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 #----- Get Observations -----
 @app.route("/api/observations", methods=["GET"])
 def get_observations():
-    # Build MongoDB query from supported query parameters
+    # Build MongoDB query
     q = {}
 
-    # Timestamp range
-    start = request.args.get("start")
-    end = request.args.get("end")
-    try:
-        if start:
-            start_str, _ = _parse_iso_timestamp(start)
-            q.setdefault("timestamp", {})["$gte"] = start_str
-        if end:
-            end_str, _ = _parse_iso_timestamp(end)
-            q.setdefault("timestamp", {})["$lte"] = end_str
-    except ValueError:
-        return jsonify({"error": "start/end must be valid ISO timestamps"}), 400
+    # Date filtering (using your actual field name)
+    date = request.args.get("date")
+    if date:
+        q["Date"] = date
 
-    # Numeric ranges helper
+    # Numeric ranges
     def _add_range(field_name, min_arg, max_arg):
         min_v = request.args.get(min_arg)
         max_v = request.args.get(max_arg)
@@ -75,36 +113,33 @@ def get_observations():
     except ValueError:
         return jsonify({"error": "min/max numeric parameters must be valid numbers"}), 400
 
-    # Pagination: limit and skip
-    limit_arg = request.args.get("limit")
-    skip_arg = request.args.get("skip")
+    # Pagination
     try:
-        limit = int(limit_arg) if limit_arg is not None else 100
+        limit = int(request.args.get("limit", 100))
+        skip = int(request.args.get("skip", 0))
     except ValueError:
-        return jsonify({"error": "limit must be an integer"}), 400
-    try:
-        skip = int(skip_arg) if skip_arg is not None else 0
-    except ValueError:
-        return jsonify({"error": "skip must be an integer"}), 400
+        return jsonify({"error": "limit and skip must be integers"}), 400
 
     if limit <= 0:
         return jsonify({"error": "limit must be > 0"}), 400
     if skip < 0:
         return jsonify({"error": "skip must be >= 0"}), 400
-    # enforce cap
+    
     limit = min(limit, 1000)
 
-    # Count total matching documents (before pagination)
+    # Query database
     try:
         total = collection.count_documents(q)
-    except Exception:
-        # In case of a query type mismatch in DB, return 400
-        return jsonify({"error": "Invalid query parameters for stored document types"}), 400
-
-    cursor = collection.find(q, {"_id": 0}).skip(skip).limit(limit)
-    items = list(cursor)
-
-    return jsonify({"count": total, "items": items})
+        cursor = collection.find(q, {"_id": 0}).skip(skip).limit(limit)
+        items = list(cursor)
+        
+        return jsonify({
+            "count": total,
+            "returned": len(items),
+            "items": items
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 
@@ -147,6 +182,5 @@ def get_stats():
 # @app.route("/api/outliers", methods=["GET"])
 # def get_outliers():
     
-
 if __name__ == "__main__":
     app.run(debug=True)

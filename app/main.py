@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import pymongo
+from dotenv import load_dotenv
+import os
 import glob
 import os
 from pymongo.errors import BulkWriteError
@@ -59,7 +61,26 @@ print(f"Cleaned data saved to {output_path}")
 
 
 # -------- Save to MongoDB --------
-client = pymongo.MongoClient("mongodb://localhost:27017/")
+load_dotenv()
+MONGO_URI = os.getenv("MONGODB_URI")
+MONGO_USER = os.getenv("MONGO_USER")
+MONGO_PASS = os.getenv("MONGO_PASS")
+
+print("MONGO_URI:", MONGO_URI)
+print("MONGO_USER:", MONGO_USER)
+print("MONGO_PASS:", MONGO_PASS)
+
+url = f"mongodb+srv://{MONGO_USER}:{MONGO_PASS}@{MONGO_URI}/?retryWrites=true&w=majority"
+print("Connection string:", url)
+try:
+    client = pymongo.MongoClient(url, serverSelectionTimeoutMS=5000)
+    print("MongoDB client created")
+    db = client["water_quality_data"]
+    collection = db["asv_1"]
+    print("MongoDB collection accessed")
+except Exception as e:
+    print("MongoDB connection error:", e)
+
 db = client["water_quality_data"]
 collection = db["asv_1"]
 
@@ -69,10 +90,12 @@ df_clean = df_clean.rename(columns={
     "Temperature (c)": "temperature",
     "Salinity (ppt)": "salinity",
     "ODO mg/L": "odo",
-    "Date m/d/y": "date",
+    "Date": "date",
     "Latitude": "latitude",
     "Longitude": "longitude"
 })
+
+df_clean = df_clean.replace({np.nan: None})
 
 records = df_clean.to_dict("records")
 if records:  
