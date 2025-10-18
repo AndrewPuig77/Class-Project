@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 from pymongo import MongoClient
 from datetime import datetime
+import numpy as np
 
 app = Flask(__name__)
 
@@ -11,12 +12,6 @@ collection = db["asv_1"]
 
 
 def _parse_iso_timestamp(ts_str):
-    """Parse an ISO timestamp string for validation.
-
-    Accepts timestamps with a trailing Z by converting it to +00:00 for
-    datetime.fromisoformat. Raises ValueError on invalid format.
-    so ISO lexical ordering still works) and the parsed datetime.
-    """
     if ts_str is None:
         return None, None
     # Support trailing Z
@@ -30,7 +25,6 @@ def _parse_iso_timestamp(ts_str):
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
-
 
 
 #----- Get Observations -----
@@ -107,46 +101,114 @@ def get_observations():
     return jsonify({"count": total, "items": items})
 
 
-
 #----- Get Stats -----
 @app.route("/api/stats", methods=["GET"])
 def get_stats():
     numeric_fields = ["temperature", "salinity", "odo"]
     stats = {}
+    
     for field in numeric_fields:
-        pipeline = [
-            {
-                "$group": {
-                    "_id": None,
-                    "min": {"$min": f"${field}"},
-                    "max": {"$max": f"${field}"},
-                    "avg": {"$avg": f"${field}"},
-                    "stddev": {"$stdDevPop": f"${field}"}
-                }
-            }
-        ]
-        result = list(collection.aggregate(pipeline))
-        if result:
+        # Get all values for this field (excluding None/null)
+        cursor = collection.find({field: {"$ne": None}}, {"_id": 0, field: 1})
+        values = [doc[field] for doc in cursor if field in doc and doc[field] is not None]
+        
+        if len(values) == 0:
             stats[field] = {
-                "min": result[0]["min"],
-                "max": result[0]["max"],
-                "avg": result[0]["avg"],
-                "stddev": result[0]["stddev"]
-            }
-        else:
-            stats[field] = {
+                "count": 0,
+                "mean": None,
                 "min": None,
                 "max": None,
-                "avg": None,
-                "stddev": None
+                "percentiles": {
+                    "25": None,
+                    "50": None,
+                    "75": None
+                }
             }
-
+        else:
+            values_array = np.array(values)
+            stats[field] = {
+                "count": len(values),
+                "mean": float(np.mean(values_array)),
+                "min": float(np.min(values_array)),
+                "max": float(np.max(values_array)),
+                "percentiles": {
+                    "25": float(np.percentile(values_array, 25)),
+                    "50": float(np.percentile(values_array, 50)),
+                    "75": float(np.percentile(values_array, 75))
+                }
+            }
+    
     return jsonify(stats)
 
-# ---- Get Outliers ----
-# @app.route("/api/outliers", methods=["GET"])
-# def get_outliers():
+
+#----- Get Outliers -----
+@app.route("/api/outliers", methods=["GET"])
+def get_outliers():
+    # Required parameters
+    field = request.args.get("field")
+    method = request.args.get("method", "iqr").lower()
     
+    if not field:
+        return jsonify({"error": "field parameter is required"}), 400
+    
+    if field not in ["temperature", "salinity", "odo"]:
+        return jsonify({"error": "field must be one of: temperature, salinity, odo"}), 400
+    
+    if method not in ["iqr", "z-score"]:
+        return jsonify({"error": "method must be 'iqr' or 'z-score'"}), 400
+    
+    # Get k parameter (threshold multiplier)
+    k_param = request.args.get("k", "1.5")
+    try:
+        k = float(k_param)
+    except ValueError:
+        return jsonify({"error": "k must be a valid number"}), 400
+    
+    # Fetch all documents with the field
+    cursor = collection.find({field: {"$ne": None}}, {"_id": 0})
+    docs = list(cursor)
+    
+    if len(docs) == 0:
+        return jsonify({"count": 0, "outliers": []})
+    
+    # Extract values
+    values = np.array([doc[field] for doc in docs if field in doc and doc[field] is not None])
+    
+    if len(values) == 0:
+        return jsonify({"count": 0, "outliers": []})
+    
+    # Detect outliers based on method
+    outlier_indices = []
+    
+    if method == "iqr":
+        q1 = np.percentile(values, 25)
+        q3 = np.percentile(values, 75)
+        iqr = q3 - q1
+        lower_bound = q1 - k * iqr
+        upper_bound = q3 + k * iqr
+        
+        for i, val in enumerate(values):
+            if val < lower_bound or val > upper_bound:
+                outlier_indices.append(i)
+    
+    elif method == "z-score":
+        mean = np.mean(values)
+        std = np.std(values)
+        
+        if std == 0:
+            # No outliers if no variation
+            return jsonify({"count": 0, "outliers": []})
+        
+        for i, val in enumerate(values):
+            z_score = abs((val - mean) / std)
+            if z_score > k:
+                outlier_indices.append(i)
+    
+    # Get the outlier documents
+    outliers = [docs[i] for i in outlier_indices]
+    
+    return jsonify({"count": len(outliers), "outliers": outliers})
+
 
 if __name__ == "__main__":
     app.run(debug=True)
