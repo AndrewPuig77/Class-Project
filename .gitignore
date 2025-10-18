@@ -13,6 +13,9 @@ venv/
 env/
 .venv/
 
+# Environment variable files
+.env
+
 # Editor directories and files
 .vscode/
 .idea/
