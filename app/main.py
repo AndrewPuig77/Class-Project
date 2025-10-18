@@ -61,7 +61,7 @@ print(f"Cleaned data saved to {output_path}")
 
 
 # -------- Save to MongoDB --------
-load_dotenv(dotenv_path="C:/Users/puigb/Documents/New folder (3)/Class-Project/.env")
+load_dotenv()
 MONGO_URI = os.getenv("MONGODB_URI")
 MONGO_USER = os.getenv("MONGO_USER")
 MONGO_PASS = os.getenv("MONGO_PASS")
@@ -90,10 +90,12 @@ df_clean = df_clean.rename(columns={
     "Temperature (c)": "temperature",
     "Salinity (ppt)": "salinity",
     "ODO mg/L": "odo",
-    "Date m/d/y": "date",
+    "Date": "date",
     "Latitude": "latitude",
     "Longitude": "longitude"
 })
+
+df_clean = df_clean.replace({np.nan: None})
 
 records = df_clean.to_dict("records")
 if records:  

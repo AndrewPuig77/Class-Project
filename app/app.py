@@ -3,7 +3,6 @@ from pymongo import MongoClient
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-
 app = Flask(__name__)
 
 # Connect to Mongo
@@ -48,12 +47,37 @@ def _parse_iso_timestamp(ts_str):
     parsed = datetime.fromisoformat(s)
     return ts_str, parsed
 
+# In Flask app.py
+def clean_nan(obj):
+    """Replace NaN with None for JSON serialization"""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+    if isinstance(obj, dict):
+        return {k: clean_nan(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan(item) for item in obj]
+    return obj
+
+# Use it before returning
+# items = clean_nan(items)
+# return jsonify({"count": total, "items": items})
+
 #----- Health Check -----
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
 
 
+#----- Get Available Dates -----
+@app.route("/api/dates", methods=["GET"])
+def get_dates():
+    try:
+        dates = collection.distinct("Date")
+        dates = sorted([d for d in dates if d])
+        return jsonify({"dates": dates})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 #----- Get Observations -----
 @app.route("/api/observations", methods=["GET"])
@@ -64,7 +88,7 @@ def get_observations():
     # Date filtering (using your actual field name)
     date = request.args.get("date")
     if date:
-        q["date"] = date
+        q["Date"] = date
 
     # Numeric ranges
     def _add_range(field_name, min_arg, max_arg):
@@ -158,13 +182,5 @@ def get_stats():
 # @app.route("/api/outliers", methods=["GET"])
 # def get_outliers():
     
-@app.route("/api/debug/sample", methods=["GET"])
-def debug_sample():
-    try:
-        sample = collection.find_one({}, {"_id": 0})
-        return jsonify(sample)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 if __name__ == "__main__":
-
     app.run(debug=True)

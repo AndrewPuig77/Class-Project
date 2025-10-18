@@ -23,22 +23,22 @@ date_filter = st.sidebar.text_input("Date (MM/DD/YY)", placeholder="12/16/21")
 
 # Temperature range
 st.sidebar.subheader("Temperature (°C)")
-temp_min = st.sidebar.number_input("Min Temp", value=None, placeholder="e.g., 25.0")
-temp_max = st.sidebar.number_input("Max Temp", value=None, placeholder="e.g., 30.0")
+temp_min = st.sidebar.number_input("Min Temp", value=None)
+temp_max = st.sidebar.number_input("Max Temp", value=None)
 
 # Salinity range
 st.sidebar.subheader("Salinity (ppt)")
-sal_min = st.sidebar.number_input("Min Salinity", value=None, placeholder="e.g., 30.0")
-sal_max = st.sidebar.number_input("Max Salinity", value=None, placeholder="e.g., 50.0")
+sal_min = st.sidebar.number_input("Min Salinity", value=None)
+sal_max = st.sidebar.number_input("Max Salinity", value=None)
 
 # ODO range
 st.sidebar.subheader("ODO (mg/L)")
-odo_min = st.sidebar.number_input("Min ODO", value=None, placeholder="e.g., 4.0")
-odo_max = st.sidebar.number_input("Max ODO", value=None, placeholder="e.g., 8.0")
+odo_min = st.sidebar.number_input("Min ODO", value=None)
+odo_max = st.sidebar.number_input("Max ODO", value=None)
 
 # Pagination
 st.sidebar.subheader("Pagination")
-limit = st.sidebar.slider("Limit", min_value=10, max_value=1000, value=100, step=10)
+limit = st.sidebar.slider("Limit", min_value=100, max_value=1000, value=100, step=10)
 skip = st.sidebar.number_input("Skip", min_value=0, value=0, step=10)
 
 # Apply filters button
@@ -83,10 +83,10 @@ try:
             df = pd.DataFrame(items)
             
             # Data Table
-            st.subheader("📊 Observations Data")
+            st.subheader("Observations Data")
             
             # Show key columns first
-            display_cols = ["Date", "Time", "latitude", "longitude", "temperature", "salinity", "odo"]
+            display_cols = ["date", "Time", "latitude", "longitude", "temperature", "salinity", "odo"]
             available_cols = [col for col in display_cols if col in df.columns]
             st.dataframe(df[available_cols], use_container_width=True, height=300)
             
@@ -100,7 +100,7 @@ try:
             )
             
             # Visualizations
-            st.subheader("📈 Visualizations")
+            st.subheader("Visualizations")
             
             # Create tabs for different charts
             tab1, tab2, tab3, tab4 = st.tabs(["Temperature Over Time", "Salinity Distribution", "Temp vs Salinity", "Map View"])
@@ -146,7 +146,7 @@ try:
                 # Map view
                 if all(col in df.columns for col in ["latitude", "longitude"]):
                     fig4 = px.scatter_mapbox(df, lat="latitude", lon="longitude",
-                                            hover_data=["temperature", "salinity", "odo", "Date"],
+                                            hover_data=["temperature", "salinity", "odo", "date"],
                                             color="temperature",
                                             size_max=15,
                                             zoom=10,
@@ -169,7 +169,7 @@ except requests.exceptions.RequestException as e:
 
 # Statistics Panel
 st.divider()
-st.subheader("📊 Summary Statistics")
+st.subheader("Summary Statistics")
 
 try:
     stats_response = requests.get(f"{API_BASE}/stats", timeout=50)
@@ -208,7 +208,7 @@ except Exception as e:
 
 # Outliers Panel
 st.divider()
-st.subheader("⚠️ Outlier Detection")
+st.subheader("Outlier Detection")
 
 col1, col2, col3 = st.columns(3)
 with col1:
